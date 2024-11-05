@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const { URL } = require('url');
 
 const app = express();
 
@@ -13,12 +14,16 @@ app.use(cors());
 app.use(express.json());
 
 // Database connection
+const dbUrl = new URL(process.env.POSTGRES_URL);
 const pool = new Pool({
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_DATABASE,
+  user: dbUrl.username,
+  password: dbUrl.password,
+  host: dbUrl.hostname,
+  port: dbUrl.port,
+  database: dbUrl.pathname.split('/')[1],
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // Authentication Middleware
