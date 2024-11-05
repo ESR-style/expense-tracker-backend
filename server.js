@@ -5,7 +5,6 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
-const { URL } = require('url');
 
 const app = express();
 
