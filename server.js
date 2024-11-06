@@ -178,8 +178,8 @@ app.put('/api/expenses/:id', authenticateToken, async (req, res) => {
 app.get('/api/loans', authenticateToken, async (req, res) => {
   try {
     const loans = await pool.query(
-      'SELECT * FROM transactions WHERE user_id = $1 AND type = $2 ORDER BY date DESC',
-      [req.user.id, 'loan']
+      'SELECT * FROM loans WHERE user_id = $1 ORDER BY date DESC',
+      [req.user.id]
     );
     res.json(loans.rows);
   } catch (err) {
@@ -191,10 +191,16 @@ app.get('/api/loans', authenticateToken, async (req, res) => {
 // Add new loan
 app.post('/api/loans', authenticateToken, async (req, res) => {
   try {
-    const { category, amount, description } = req.body;
+    const { person_name, type, amount, description } = req.body;
+
+    // Validate request body
+    if (!person_name || !type || !amount || !description) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
     const newLoan = await pool.query(
-      'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, 'loan', category, amount, description]
+      'INSERT INTO loans (user_id, person_name, type, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [req.user.id, person_name, type, amount, description]
     );
     res.json(newLoan.rows[0]);
   } catch (err) {
@@ -206,14 +212,20 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
 // Update loan
 app.put('/api/loans/:id', authenticateToken, async (req, res) => {
   try {
-    const { category, amount, description } = req.body;
+    const { person_name, type, amount, description } = req.body;
+
+    // Validate request body
+    if (!person_name || !type || !amount || !description) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
     const result = await pool.query(
-      'UPDATE transactions SET category = $1, amount = $2, description = $3 WHERE transaction_id = $4 AND user_id = $5 RETURNING *',
-      [category, amount, description, req.params.id, req.user.id]
+      'UPDATE loans SET person_name = $1, type = $2, amount = $3, description = $4 WHERE loan_id = $5 AND user_id = $6 RETURNING *',
+      [person_name, type, amount, description, req.params.id, req.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Transaction not found' });
+      return res.status(404).json({ error: 'Loan not found' });
     }
 
     res.json(result.rows[0]);
@@ -227,15 +239,15 @@ app.put('/api/loans/:id', authenticateToken, async (req, res) => {
 app.delete('/api/loans/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'DELETE FROM transactions WHERE transaction_id = $1 AND user_id = $2 RETURNING *',
+      'DELETE FROM loans WHERE loan_id = $1 AND user_id = $2 RETURNING *',
       [req.params.id, req.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Transaction not found' });
+      return res.status(404).json({ error: 'Loan not found' });
     }
 
-    res.json({ message: 'Transaction deleted successfully' });
+    res.json({ message: 'Loan deleted successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
