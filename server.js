@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -19,6 +18,9 @@ const pool = new Pool({
   host: process.env.POSTGRES_HOST,
   port: process.env.POSTGRES_PORT,
   database: process.env.POSTGRES_DATABASE,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // Authentication Middleware
@@ -40,12 +42,9 @@ const authenticateToken = (req, res, next) => {
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    
+
     // Check if user exists
-    const userExists = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const userExists = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
 
     if (userExists.rows.length > 0) {
       return res.status(400).json({ error: 'User already exists' });
@@ -70,7 +69,7 @@ app.post('/api/register', async (req, res) => {
 
     res.json({ token });
   } catch (err) {
-    console.error(err);
+    console.error('Error during registration:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -81,10 +80,7 @@ app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
 
     // Check if user exists
-    const user = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
 
     if (user.rows.length === 0) {
       return res.status(400).json({ error: 'User does not exist' });
@@ -103,15 +99,12 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    res.json({ token ,
-      name: user.rows[0].name
-    });
+    res.json({ token, name: user.rows[0].name });
   } catch (err) {
-    console.error(err);
+    console.error('Error during login:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 
 // Get user's expenses
 app.get('/api/expenses', authenticateToken, async (req, res) => {
@@ -142,7 +135,7 @@ app.post('/api/expenses', authenticateToken, async (req, res) => {
   }
 });
 
-// server.js - Add or update DELETE endpoint
+// Delete expense
 app.delete('/api/expenses/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -161,6 +154,7 @@ app.delete('/api/expenses/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Update expense
 app.put('/api/expenses/:id', authenticateToken, async (req, res) => {
   try {
     const { category, amount, description } = req.body;
@@ -184,8 +178,8 @@ app.put('/api/expenses/:id', authenticateToken, async (req, res) => {
 app.get('/api/loans', authenticateToken, async (req, res) => {
   try {
     const loans = await pool.query(
-      'SELECT * FROM loans WHERE user_id = $1 ORDER BY date DESC',
-      [req.user.id]
+      'SELECT * FROM transactions WHERE user_id = $1 AND type = $2 ORDER BY date DESC',
+      [req.user.id, 'loan']
     );
     res.json(loans.rows);
   } catch (err) {
@@ -197,10 +191,10 @@ app.get('/api/loans', authenticateToken, async (req, res) => {
 // Add new loan
 app.post('/api/loans', authenticateToken, async (req, res) => {
   try {
-    const { personName, amount, type, description } = req.body;
+    const { category, amount, description } = req.body;
     const newLoan = await pool.query(
-      'INSERT INTO loans (user_id, person_name, amount, type, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, personName, amount, type, description]
+      'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [req.user.id, 'loan', category, amount, description]
     );
     res.json(newLoan.rows[0]);
   } catch (err) {
@@ -209,16 +203,17 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
   }
 });
 
+// Update loan
 app.put('/api/loans/:id', authenticateToken, async (req, res) => {
   try {
-    const { person_name, amount, type, description } = req.body;
+    const { category, amount, description } = req.body;
     const result = await pool.query(
-      'UPDATE loans SET person_name = $1, amount = $2, type = $3, description = $4 WHERE loan_id = $5 AND user_id = $6 RETURNING *',
-      [person_name, amount, type, description, req.params.id, req.user.id]
+      'UPDATE transactions SET category = $1, amount = $2, description = $3 WHERE transaction_id = $4 AND user_id = $5 RETURNING *',
+      [category, amount, description, req.params.id, req.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Loan not found' });
+      return res.status(404).json({ error: 'Transaction not found' });
     }
 
     res.json(result.rows[0]);
@@ -232,19 +227,20 @@ app.put('/api/loans/:id', authenticateToken, async (req, res) => {
 app.delete('/api/loans/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'DELETE FROM loans WHERE loan_id = $1 AND user_id = $2 RETURNING *',
+      'DELETE FROM transactions WHERE transaction_id = $1 AND user_id = $2 RETURNING *',
       [req.params.id, req.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Loan not found' });
+      return res.status(404).json({ error: 'Transaction not found' });
     }
 
-    res.json({ message: 'Loan deleted successfully' });
+    res.json({ message: 'Transaction deleted successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
