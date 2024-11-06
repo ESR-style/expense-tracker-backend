@@ -174,7 +174,6 @@ app.put('/api/expenses/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user's loans
 app.get('/api/loans', authenticateToken, async (req, res) => {
   try {
     const loans = await pool.query(
@@ -190,7 +189,11 @@ app.get('/api/loans', authenticateToken, async (req, res) => {
 
 // Add new loan
 app.post('/api/loans', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
   try {
+    await client.query('BEGIN');
+    
     const { person_name, type, amount, description } = req.body;
 
     // Validate request body
@@ -198,14 +201,27 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const newLoan = await pool.query(
+    // Insert loan
+    const newLoan = await client.query(
       'INSERT INTO loans (user_id, person_name, type, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [req.user.id, person_name, type, amount, description]
     );
+
+    // Insert corresponding transaction
+    await client.query(
+      'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5)',
+      [req.user.id, 'loan', type, amount, description]
+    );
+
+    await client.query('COMMIT');
     res.json(newLoan.rows[0]);
+    
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -253,6 +269,5 @@ app.delete('/api/loans/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
