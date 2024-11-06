@@ -196,30 +196,39 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
     
     const { person_name, type, amount, description } = req.body;
 
-    // Validate request body
-    if (!person_name || !type || !amount || !description) {
-      return res.status(400).json({ error: 'All fields are required' });
+    // Enhanced validation
+    if (!person_name?.trim()) {
+      return res.status(400).json({ error: 'Person name is required' });
+    }
+    if (!type?.trim()) {
+      return res.status(400).json({ error: 'Type is required' });
+    }
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+    if (!description?.trim()) {
+      return res.status(400).json({ error: 'Description is required' });
     }
 
     // Insert loan
     const newLoan = await client.query(
       'INSERT INTO loans (user_id, person_name, type, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, person_name, type, amount, description]
+      [req.user.id, person_name.trim(), type.trim(), amount, description.trim()]
     );
 
     // Insert corresponding transaction
     await client.query(
       'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5)',
-      [req.user.id, 'loan', type, amount, description]
+      [req.user.id, 'loan', type.trim(), amount, description.trim()]
     );
 
     await client.query('COMMIT');
-    res.json(newLoan.rows[0]);
+    return res.status(201).json(newLoan.rows[0]);
     
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Loan creation error:', err);
+    return res.status(500).json({ error: 'Failed to create loan' });
   } finally {
     client.release();
   }
