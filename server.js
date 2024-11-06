@@ -174,10 +174,11 @@ app.put('/api/expenses/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Get all loans
 app.get('/api/loans', authenticateToken, async (req, res) => {
   try {
     const loans = await pool.query(
-      'SELECT * FROM loans WHERE user_id = $1 ORDER BY date DESC',
+      'SELECT * FROM new_loans WHERE user_id = $1 ORDER BY created_at DESC',
       [req.user.id]
     );
     res.json(loans.rows);
@@ -192,11 +193,9 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   
   try {
-    await client.query('BEGIN');
-    
-    const { person_name, type, amount, description } = req.body;
+    const { person_name, type, amount, description, due_date } = req.body;
 
-    // Enhanced validation
+    // Validation
     if (!person_name?.trim()) {
       return res.status(400).json({ error: 'Person name is required' });
     }
@@ -210,23 +209,13 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Description is required' });
     }
 
-    // Insert loan
     const newLoan = await client.query(
-      'INSERT INTO loans (user_id, person_name, type, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, person_name.trim(), type.trim(), amount, description.trim()]
+      'INSERT INTO new_loans (user_id, person_name, type, amount, description, due_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [req.user.id, person_name.trim(), type.trim(), amount, description.trim(), due_date]
     );
 
-    // Insert corresponding transaction
-    await client.query(
-      'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5)',
-      [req.user.id, 'loan', type.trim(), amount, description.trim()]
-    );
-
-    await client.query('COMMIT');
     return res.status(201).json(newLoan.rows[0]);
-    
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Loan creation error:', err);
     return res.status(500).json({ error: 'Failed to create loan' });
   } finally {
@@ -236,27 +225,40 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
 
 // Update loan
 app.put('/api/loans/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
   try {
-    const { person_name, type, amount, description } = req.body;
+    const { person_name, type, amount, description, status, due_date } = req.body;
 
-    // Validate request body
-    if (!person_name || !type || !amount || !description) {
-      return res.status(400).json({ error: 'All fields are required' });
+    // Validation
+    if (!person_name?.trim()) {
+      return res.status(400).json({ error: 'Person name is required' });
+    }
+    if (!type?.trim()) {
+      return res.status(400).json({ error: 'Type is required' });
+    }
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+    if (!description?.trim()) {
+      return res.status(400).json({ error: 'Description is required' });
     }
 
-    const result = await pool.query(
-      'UPDATE loans SET person_name = $1, type = $2, amount = $3, description = $4 WHERE loan_id = $5 AND user_id = $6 RETURNING *',
-      [person_name, type, amount, description, req.params.id, req.user.id]
+    const updatedLoan = await client.query(
+      'UPDATE new_loans SET person_name = $1, type = $2, amount = $3, description = $4, status = $5, due_date = $6, updated_at = CURRENT_TIMESTAMP WHERE loan_id = $7 AND user_id = $8 RETURNING *',
+      [person_name.trim(), type.trim(), amount, description.trim(), status, due_date, req.params.id, req.user.id]
     );
 
-    if (result.rows.length === 0) {
+    if (updatedLoan.rows.length === 0) {
       return res.status(404).json({ error: 'Loan not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(updatedLoan.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -264,7 +266,7 @@ app.put('/api/loans/:id', authenticateToken, async (req, res) => {
 app.delete('/api/loans/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'DELETE FROM loans WHERE loan_id = $1 AND user_id = $2 RETURNING *',
+      'DELETE FROM new_loans WHERE loan_id = $1 AND user_id = $2 RETURNING *',
       [req.params.id, req.user.id]
     );
 
@@ -278,5 +280,6 @@ app.delete('/api/loans/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
