@@ -193,7 +193,7 @@ app.post('/api/loans', authenticateToken, async (req, res) => {
   try {
     const { category, amount, description } = req.body;
     const newLoan = await pool.query(
-      'INSERT INTO transactions (user_id, type, category, amount, description) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      'INSERT INTO transactions (user_id, type, amount, description) VALUES ($1, $2, $3, $4) RETURNING *',
       [req.user.id, 'loan', category, amount, description]
     );
     res.json(newLoan.rows[0]);
